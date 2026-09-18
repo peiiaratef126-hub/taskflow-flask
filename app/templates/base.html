@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
     <title>{% block title %}Task Manager{% endblock %}</title>
+    <!-- Prevent FOUC: immediately apply theme before DOM renders -->
+    <script>
+        (function() {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme) {
+                document.documentElement.setAttribute('data-theme', savedTheme);
+            } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+        })();
+    </script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -18,6 +29,10 @@
                 <span class="brand-name">TaskFlow</span>
             </div>
             <nav class="header-nav">
+                <button id="theme-toggle" class="theme-toggle-btn" aria-label="Toggle Dark Mode" title="Toggle theme">
+                    <span class="theme-icon-light" aria-hidden="true">🌙</span>
+                    <span class="theme-icon-dark" aria-hidden="true">☀️</span>
+                </button>
                 <span class="badge badge-light">Flask MVC</span>
             </nav>
         </div>
@@ -46,5 +61,14 @@
             <p>&copy; 2026 TaskFlow Flask Manager &bull; Built with Flask &amp; SQLAlchemy</p>
         </div>
     </footer>
+
+    <script>
+        document.getElementById('theme-toggle')?.addEventListener('click', function() {
+            const currentTheme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+        });
+    </script>
 </body>
 </html>
