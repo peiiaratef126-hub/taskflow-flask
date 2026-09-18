@@ -1,0 +1,53 @@
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv/
+*/venv/
+
+# Environment Variables & Secrets
+.env
+.env.local
+.env.*.local
+
+# Databases & SQLite
+*.db
+*.sqlite
+*.sqlite3
+tasks_dev.db
+instance/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE & Editor Config
+.vscode/
+.idea/
+*.swp
+*.swo
+.antigravity/
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Build & Distribution
+build/
+dist/
+*.egg-info/
+
+# Office / Reference Documents
+*.docx
+~$*.docx
+

@@ -1,0 +1,165 @@
+from app import db
+from app.models import Task
+
+
+def test_index_empty_state(client):
+    """GET / should render the dashboard with 200 and show empty state."""
+    response = client.get("/")
+    assert response.status_code == 200
+    assert b"Personal Task Manager" in response.data
+    assert b"No tasks found" in response.data
+
+
+def test_add_task_success(client, app):
+    """POST /tasks/add with valid title should create task and redirect to /."""
+    response = client.post(
+        "/tasks/add",
+        data={"title": "Write Automated Tests"},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert b"Write Automated Tests" in response.data
+
+    with app.app_context():
+        task = db.session.scalar(db.select(Task).filter_by(title="Write Automated Tests"))
+        assert task is not None
+        assert task.done is False
+
+
+def test_add_task_empty_title(client, app):
+    """POST /tasks/add with empty title should reject and not create task."""
+    response = client.post(
+        "/tasks/add",
+        data={"title": ""},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert b"Task title cannot be empty." in response.data
+
+    with app.app_context():
+        count = len(db.session.scalars(db.select(Task)).all())
+        assert count == 0
+
+
+def test_add_task_whitespace_only(client, app):
+    """POST /tasks/add with only spaces should be rejected."""
+    response = client.post(
+        "/tasks/add",
+        data={"title": "     "},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert b"Task title cannot be empty." in response.data
+
+    with app.app_context():
+        count = len(db.session.scalars(db.select(Task)).all())
+        assert count == 0
+
+
+def test_add_task_title_too_long(client, app):
+    """POST /tasks/add with title exceeding 200 characters should be rejected."""
+    long_title = "A" * 201
+    response = client.post(
+        "/tasks/add",
+        data={"title": long_title},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert b"200 characters or fewer" in response.data
+
+    with app.app_context():
+        assert len(db.session.scalars(db.select(Task)).all()) == 0
+
+
+def test_add_task_utf8_arabic(client, app):
+    """POST /tasks/add should properly support UTF-8 Arabic characters."""
+    arabic_title = "إكمال مشروع البرمجة المتقدمة"
+    response = client.post(
+        "/tasks/add",
+        data={"title": arabic_title},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert arabic_title.encode("utf-8") in response.data
+
+    with app.app_context():
+        task = db.session.scalar(db.select(Task).filter_by(title=arabic_title))
+        assert task is not None
+        assert task.title == arabic_title
+
+
+def test_toggle_task_status(client, app, sample_task):
+    """POST /tasks/<id>/toggle should flip done between False and True."""
+    # Toggle from False to True
+    res1 = client.post(f"/tasks/{sample_task}/toggle", follow_redirects=True)
+    assert res1.status_code == 200
+    with app.app_context():
+        task = db.session.get(Task, sample_task)
+        assert task.done is True
+
+    # Toggle from True back to False
+    res2 = client.post(f"/tasks/{sample_task}/toggle", follow_redirects=True)
+    assert res2.status_code == 200
+    with app.app_context():
+        task = db.session.get(Task, sample_task)
+        assert task.done is False
+
+
+def test_toggle_nonexistent_task(client):
+    """POST /tasks/<id>/toggle for non-existent id should return 404."""
+    response = client.post("/tasks/99999/toggle")
+    assert response.status_code == 404
+
+
+def test_delete_task(client, app, sample_task):
+    """POST /tasks/<id>/delete should remove task from database."""
+    response = client.post(f"/tasks/{sample_task}/delete", follow_redirects=True)
+    assert response.status_code == 200
+
+    with app.app_context():
+        task = db.session.get(Task, sample_task)
+        assert task is None
+
+
+def test_delete_nonexistent_task(client):
+    """POST /tasks/<id>/delete for non-existent id should return 404."""
+    response = client.post("/tasks/99999/delete")
+    assert response.status_code == 404
+
+
+def test_tasks_ordering_descending(client, app):
+    """Tasks should be listed in descending order by created_at."""
+    with app.app_context():
+        t1 = Task(title="First Task")
+        t2 = Task(title="Second Task")
+        db.session.add_all([t1, t2])
+        db.session.commit()
+
+    response = client.get("/")
+    assert response.status_code == 200
+    content = response.data.decode("utf-8")
+    pos_second = content.find("Second Task")
+    pos_first = content.find("First Task")
+    assert pos_second < pos_first
+
+
+def test_model_representation_and_dict(app):
+    """Verify Task.__repr__ and Task.to_dict serialization."""
+    with app.app_context():
+        task = Task(title="Model Serialization Test", done=True)
+        db.session.add(task)
+        db.session.commit()
+
+        assert repr(task) == f"<Task id={task.id} title='Model Serialization Test' done=True>"
+        data = task.to_dict()
+        assert data["id"] == task.id
+        assert data["title"] == "Model Serialization Test"
+        assert data["done"] is True
+        assert data["created_at"] is not None
+
+
+def test_rest_mutation_safety(client, sample_task):
+    """GET requests on mutation endpoints should return 405 Method Not Allowed."""
+    assert client.get("/tasks/add").status_code == 405
+    assert client.get(f"/tasks/{sample_task}/toggle").status_code == 405
+    assert client.get(f"/tasks/{sample_task}/delete").status_code == 405
