@@ -146,6 +146,21 @@ def test_reject_keyboard_runs(client, app):
         assert len(db.session.scalars(db.select(Task)).all()) == 0
 
 
+def test_reject_arabic_keyboard_mash(client, app):
+    """Confirm Arabic keyboard-mashing word 'نتشسابتن' and home-row mashes are rejected."""
+    for mash_title in ["نتشسابتن", "شسيبلاتن", "ضصثقفغ", "كمنتالبيسش"]:
+        response = client.post(
+            "/tasks/add",
+            data={"title": mash_title},
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert "النص يبدو كضغط عشوائي على لوحة المفاتيح.".encode("utf-8") in response.data
+
+    with app.app_context():
+        assert len(db.session.scalars(db.select(Task)).all()) == 0
+
+
 def test_reject_low_entropy_words(client, app):
     """Confirm words longer than 5 letters with fewer than 3 unique chars are rejected."""
     for title in ["ababab", "task ananan", "مهمة سمسمسم"]:
@@ -185,6 +200,10 @@ def test_validator_unit_checks():
     # Low entropy
     ok, err = is_meaningful_text("ababab")
     assert not ok and err == "يرجى كتابة نص ذي معنى."
+
+    # Arabic keyboard mash (e.g. نتشسابتن)
+    ok, err = is_meaningful_text("نتشسابتن")
+    assert not ok and err == "النص يبدو كضغط عشوائي على لوحة المفاتيح."
 
     # Valid English and Arabic
     ok, err = is_meaningful_text("Study for software engineering exam")

@@ -1,5 +1,29 @@
 import re
 
+# Standard Arabic physical keyboard layout (Rows 0, 1, 2)
+ARABIC_KEYBOARD_ROWS = [
+    "ضصثقفغعهخحجدذ",   # Top row
+    "شسيبلاتنمكط",     # Home row
+    "ئءؤرىةوزظ",       # Bottom row
+]
+
+# Incompatible Arabic consonant pairs (letters that cannot co-occur adjacently in Arabic stems)
+INCOMPATIBLE_ARABIC_PAIRS = [
+    "شس", "سش",
+    "صس", "سص",
+    "صش", "شص",
+    "ضظ", "ظض",
+    "عغ", "غع",
+    "حخ", "خح",
+    "ثظ", "ظث",
+    "ثص", "صث",
+    "ثس", "سث",
+    "ظز", "زظ",
+    "ذز", "زذ",
+    "قك", "كق",
+    "جق", "قج",
+]
+
 KEYBOARD_RUNS = [
     # English keyboard patterns
     "asdfg",
@@ -7,11 +31,23 @@ KEYBOARD_RUNS = [
     "zxcvb",
     "poiuy",
     "lkjhg",
-    # Arabic keyboard patterns
-    "ضصثقف",
+    # Arabic keyboard patterns (runs along rows)
+    "ضصثق",
+    "صثقف",
+    "ثقفغ",
     "شسيبل",
-    "ئءؤرلا",
+    "شسيب",
+    "سيبل",
+    "تنمكط",
+    "نمكط",
     "كمنتال",
+    "طكمنت",
+    "بيسش",
+    "لبيسش",
+    "ئءؤر",
+    "ءؤرى",
+    "ةوزظ",
+    "ظزوة",
 ]
 
 VOWELS = set("aeiouy")
@@ -21,6 +57,8 @@ REPEATED_CHARS_REGEX = re.compile(r"(.)\1{2,}")
 
 def is_meaningful_text(text: str) -> tuple[bool, str]:
     """Validate that text is meaningful and readable, rejecting keyboard mash and gibberish.
+
+    Supports both English and Arabic language heuristics (phonotactics & keyboard layout).
 
     Returns:
         tuple[bool, str]: (is_valid, error_message)
@@ -38,7 +76,12 @@ def is_meaningful_text(text: str) -> tuple[bool, str]:
         if pattern in lower_text:
             return False, "النص يبدو كضغط عشوائي على لوحة المفاتيح."
 
-    # 3. Vowel & Consonant Check (for Latin/English Words)
+    # 3. Arabic Phonotactic Incompatibility & Mash Detection
+    for pair in INCOMPATIBLE_ARABIC_PAIRS:
+        if pair in text:
+            return False, "النص يبدو كضغط عشوائي على لوحة المفاتيح."
+
+    # 4. Vowel & Consonant Check (for Latin/English Words)
     # Checks each alphabetic English word of 4 or more letters
     latin_words = re.findall(r"[a-zA-Z]+", text)
     for word in latin_words:
@@ -50,7 +93,7 @@ def is_meaningful_text(text: str) -> tuple[bool, str]:
             if CONSONANT_CLUSTER_REGEX.search(word):
                 return False, "يرجى إدخال كلمات واضحة ومقروءة."
 
-    # 4. Entropy / Variety Check (for words longer than 5 letters)
+    # 5. Entropy / Variety Check (for words longer than 5 letters)
     # Ensure at least 3 unique characters exist (blocks ababab, etc.)
     words = re.findall(r"\w+", text)
     for word in words:
