@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from app import db
 from app.models import Task
+from app.validators import is_meaningful_text
 
 main_bp = Blueprint("main", __name__)
 
@@ -38,7 +39,13 @@ def add_task():
         flash("يرجى إدخال نص مهمة صالح يحتوي على أحرف واضحة.", "warning")
         return redirect(url_for("main.index"))
 
-    # 3. Duplicate Active Task Prevention (case-insensitive, trimmed, active only)
+    # 3. Anti-Gibberish & Readability Validation
+    is_valid, error_msg = is_meaningful_text(title)
+    if not is_valid:
+        flash(error_msg, "warning")
+        return redirect(url_for("main.index"))
+
+    # 4. Duplicate Active Task Prevention (case-insensitive, trimmed, active only)
     existing_active_task = Task.query.filter(
         db.func.lower(Task.title) == title.lower(),
         Task.done == False

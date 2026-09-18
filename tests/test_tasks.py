@@ -1,5 +1,6 @@
 from app import db
 from app.models import Task
+from app.validators import is_meaningful_text
 
 
 def test_index_empty_state(client):
@@ -99,6 +100,98 @@ def test_reject_symbols_only(client, app):
 
     with app.app_context():
         assert len(db.session.scalars(db.select(Task)).all()) == 0
+
+
+def test_reject_gibberish_keyboard_mash(client, app):
+    """Confirm meaningless keyboard-mash word 'kjfvbklmv' is rejected."""
+    response = client.post(
+        "/tasks/add",
+        data={"title": "kjfvbklmv"},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "يرجى إدخال كلمات واضحة ومقروءة.".encode("utf-8") in response.data
+
+    with app.app_context():
+        assert len(db.session.scalars(db.select(Task)).all()) == 0
+
+
+def test_reject_repeated_characters(client, app):
+    """Confirm 3 or more identical consecutive characters are rejected."""
+    for title in ["aaaa", "hhhh task", "Finish homework....."]:
+        response = client.post(
+            "/tasks/add",
+            data={"title": title},
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert "النص يحتوي على أحرف مكررة بشكل غير طبيعي.".encode("utf-8") in response.data
+
+    with app.app_context():
+        assert len(db.session.scalars(db.select(Task)).all()) == 0
+
+
+def test_reject_keyboard_runs(client, app):
+    """Confirm continuous keyboard runs in English and Arabic are rejected."""
+    for title in ["asdfg project", "qwerty review", "مهمة ضصثقف", "شسيبل عمل"]:
+        response = client.post(
+            "/tasks/add",
+            data={"title": title},
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert "النص يبدو كضغط عشوائي على لوحة المفاتيح.".encode("utf-8") in response.data
+
+    with app.app_context():
+        assert len(db.session.scalars(db.select(Task)).all()) == 0
+
+
+def test_reject_low_entropy_words(client, app):
+    """Confirm words longer than 5 letters with fewer than 3 unique chars are rejected."""
+    for title in ["ababab", "task ananan", "مهمة سمسمسم"]:
+        response = client.post(
+            "/tasks/add",
+            data={"title": title},
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert "يرجى كتابة نص ذي معنى.".encode("utf-8") in response.data
+
+    with app.app_context():
+        assert len(db.session.scalars(db.select(Task)).all()) == 0
+
+
+def test_validator_unit_checks():
+    """Direct unit tests for is_meaningful_text validator."""
+    # Character repetition
+    ok, err = is_meaningful_text("aaaa")
+    assert not ok and err == "النص يحتوي على أحرف مكررة بشكل غير طبيعي."
+
+    # Keyboard run
+    ok, err = is_meaningful_text("qwerty")
+    assert not ok and err == "النص يبدو كضغط عشوائي على لوحة المفاتيح."
+
+    ok, err = is_meaningful_text("مهمة ضصثقف")
+    assert not ok and err == "النص يبدو كضغط عشوائي على لوحة المفاتيح."
+
+    # No vowel in 4+ letter word (e.g. kjfvbklmv)
+    ok, err = is_meaningful_text("kjfvbklmv")
+    assert not ok and err == "يرجى إدخال كلمات واضحة ومقروءة."
+
+    # 5+ consecutive consonants
+    ok, err = is_meaningful_text("test brzkltvw now")
+    assert not ok and err == "يرجى إدخال كلمات واضحة ومقروءة."
+
+    # Low entropy
+    ok, err = is_meaningful_text("ababab")
+    assert not ok and err == "يرجى كتابة نص ذي معنى."
+
+    # Valid English and Arabic
+    ok, err = is_meaningful_text("Study for software engineering exam")
+    assert ok and err == ""
+
+    ok, err = is_meaningful_text("مهمة جديدة باللغة العربية")
+    assert ok and err == ""
 
 
 def test_add_arabic_task(client, app):
