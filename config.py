@@ -13,10 +13,12 @@ class DevelopmentConfig(Config):
     """Development configuration with debug mode and local SQLite database."""
     DEBUG = True
     TESTING = False
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        "DATABASE_URL",
-        f"sqlite:///{os.path.join(basedir, 'tasks_dev.db')}"
-    )
+    _db_url = os.environ.get("DATABASE_URL")
+    if _db_url and _db_url.startswith("postgres://"):
+        _db_url = _db_url.replace("postgres://", "postgresql://", 1)
+    elif not _db_url:
+        _db_url = f"sqlite:///{os.path.join(basedir, 'tasks_dev.db')}"
+    SQLALCHEMY_DATABASE_URI = _db_url
 
 
 class TestingConfig(Config):
@@ -28,11 +30,19 @@ class TestingConfig(Config):
 
 
 class ProductionConfig(Config):
-    """Production configuration with strict environment variable bindings."""
+    """Production configuration with strict environment variable bindings and Vercel compatibility."""
     DEBUG = False
     TESTING = False
-    SECRET_KEY = os.environ.get("SECRET_KEY")
-    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL")
+    SECRET_KEY = os.environ.get("SECRET_KEY") or "taskflow-prod-secret-fallback-key-2026"
+    _db_url = os.environ.get("DATABASE_URL")
+    if _db_url and _db_url.startswith("postgres://"):
+        _db_url = _db_url.replace("postgres://", "postgresql://", 1)
+    elif not _db_url:
+        if os.environ.get("VERCEL"):
+            _db_url = "sqlite:////tmp/tasks.db"
+        else:
+            _db_url = f"sqlite:///{os.path.join(basedir, 'tasks_dev.db')}"
+    SQLALCHEMY_DATABASE_URI = _db_url
 
 
 config_by_name = {
