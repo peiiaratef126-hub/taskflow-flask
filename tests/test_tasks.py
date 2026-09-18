@@ -110,7 +110,35 @@ def test_reject_gibberish_keyboard_mash(client, app):
         follow_redirects=True,
     )
     assert response.status_code == 200
-    assert "يرجى إدخال كلمات واضحة ومقروءة.".encode("utf-8") in response.data
+    assert "الكلمات الإنجليزية يجب أن تحتوي على حروف علة مقروءة.".encode("utf-8") in response.data
+
+    with app.app_context():
+        assert len(db.session.scalars(db.select(Task)).all()) == 0
+
+
+def test_reject_english_home_row_mash(client, app):
+    """Confirm English home-row mash 'lkjasd' is strictly rejected."""
+    response = client.post(
+        "/tasks/add",
+        data={"title": "lkjasd"},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "النص المدخل يبدو كضغط عشوائي على لوحة المفاتيح.".encode("utf-8") in response.data
+
+    with app.app_context():
+        assert len(db.session.scalars(db.select(Task)).all()) == 0
+
+
+def test_reject_arabic_home_row_oscillation(client, app):
+    """Confirm Arabic home-row oscillation 'تنتننتسي' is strictly rejected."""
+    response = client.post(
+        "/tasks/add",
+        data={"title": "تنتننتسي"},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "النص يبدو كضغط متكرر على لوحة المفاتيح.".encode("utf-8") in response.data
 
     with app.app_context():
         assert len(db.session.scalars(db.select(Task)).all()) == 0
@@ -140,7 +168,7 @@ def test_reject_keyboard_runs(client, app):
             follow_redirects=True,
         )
         assert response.status_code == 200
-        assert "النص يبدو كضغط عشوائي على لوحة المفاتيح.".encode("utf-8") in response.data
+        assert "النص المدخل يبدو كضغط عشوائي على لوحة المفاتيح.".encode("utf-8") in response.data
 
     with app.app_context():
         assert len(db.session.scalars(db.select(Task)).all()) == 0
@@ -155,22 +183,22 @@ def test_reject_arabic_keyboard_mash(client, app):
             follow_redirects=True,
         )
         assert response.status_code == 200
-        assert "النص يبدو كضغط عشوائي على لوحة المفاتيح.".encode("utf-8") in response.data
+        assert "النص المدخل يبدو كضغط عشوائي على لوحة المفاتيح.".encode("utf-8") in response.data
 
     with app.app_context():
         assert len(db.session.scalars(db.select(Task)).all()) == 0
 
 
 def test_reject_low_entropy_words(client, app):
-    """Confirm words longer than 5 letters with fewer than 3 unique chars are rejected."""
-    for title in ["ababab", "task ananan", "مهمة سمسمسم"]:
+    """Confirm oscillating repeated patterns and low variety words are rejected."""
+    for title in ["ababab", "ananan", "تنتنتن"]:
         response = client.post(
             "/tasks/add",
             data={"title": title},
             follow_redirects=True,
         )
         assert response.status_code == 200
-        assert "يرجى كتابة نص ذي معنى.".encode("utf-8") in response.data
+        assert "النص يبدو كضغط متكرر على لوحة المفاتيح.".encode("utf-8") in response.data
 
     with app.app_context():
         assert len(db.session.scalars(db.select(Task)).all()) == 0
@@ -182,31 +210,43 @@ def test_validator_unit_checks():
     ok, err = is_meaningful_text("aaaa")
     assert not ok and err == "النص يحتوي على أحرف مكررة بشكل غير طبيعي."
 
-    # Keyboard run
+    # Keyboard mash substring
     ok, err = is_meaningful_text("qwerty")
-    assert not ok and err == "النص يبدو كضغط عشوائي على لوحة المفاتيح."
+    assert not ok and err == "النص المدخل يبدو كضغط عشوائي على لوحة المفاتيح."
 
     ok, err = is_meaningful_text("مهمة ضصثقف")
-    assert not ok and err == "النص يبدو كضغط عشوائي على لوحة المفاتيح."
+    assert not ok and err == "النص المدخل يبدو كضغط عشوائي على لوحة المفاتيح."
+
+    # English home-row mash: lkjasd
+    ok, err = is_meaningful_text("lkjasd")
+    assert not ok and err == "النص المدخل يبدو كضغط عشوائي على لوحة المفاتيح."
+
+    # Arabic home-row oscillation: تنتننتسي
+    ok, err = is_meaningful_text("تنتننتسي")
+    assert not ok and err == "النص يبدو كضغط متكرر على لوحة المفاتيح."
+
+    # Arabic keyboard mash: نتشسابتن
+    ok, err = is_meaningful_text("نتشسابتن")
+    assert not ok and err == "النص المدخل يبدو كضغط عشوائي على لوحة المفاتيح."
 
     # No vowel in 4+ letter word (e.g. kjfvbklmv)
     ok, err = is_meaningful_text("kjfvbklmv")
-    assert not ok and err == "يرجى إدخال كلمات واضحة ومقروءة."
+    assert not ok and err == "الكلمات الإنجليزية يجب أن تحتوي على حروف علة مقروءة."
 
-    # 5+ consecutive consonants
-    ok, err = is_meaningful_text("test brzkltvw now")
-    assert not ok and err == "يرجى إدخال كلمات واضحة ومقروءة."
+    # 4+ consecutive consonants
+    ok, err = is_meaningful_text("catchword")
+    assert not ok and err == "الكلمة تحتوي على تتابع غير طبيعي لحروف ساكنة."
 
-    # Low entropy
+    # Oscillating pattern
     ok, err = is_meaningful_text("ababab")
-    assert not ok and err == "يرجى كتابة نص ذي معنى."
+    assert not ok and err == "النص يبدو كضغط متكرر على لوحة المفاتيح."
 
-    # Arabic keyboard mash (e.g. نتشسابتن)
-    ok, err = is_meaningful_text("نتشسابتن")
-    assert not ok and err == "النص يبدو كضغط عشوائي على لوحة المفاتيح."
+    # Low character variety (< 50%)
+    ok, err = is_meaningful_text("task aabbaa")
+    assert not ok and err == "النص يفتقر للتنوع الطبيعي في الحروف."
 
     # Valid English and Arabic
-    ok, err = is_meaningful_text("Study for software engineering exam")
+    ok, err = is_meaningful_text("Study for software architecture exam")
     assert ok and err == ""
 
     ok, err = is_meaningful_text("مهمة جديدة باللغة العربية")
