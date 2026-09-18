@@ -26,14 +26,15 @@
 </div>
 
 <div class="card add-task-card">
-    <form action="{{ url_for('main.add_task') }}" method="POST" class="task-form">
+    <form action="{{ url_for('main.add_task') }}" method="POST" class="task-form add-form" onsubmit="this.querySelector('button').disabled=true;">
         <div class="form-group">
             <input
                 type="text"
                 name="title"
                 class="form-control"
                 placeholder="What needs to be done? (e.g. Complete university assignment)"
-                maxlength="200"
+                minlength="3"
+                maxlength="120"
                 required
                 autofocus
             >

@@ -34,7 +34,7 @@ def test_add_task_empty_title(client, app):
         follow_redirects=True,
     )
     assert response.status_code == 200
-    assert b"Task title cannot be empty." in response.data
+    assert "يجب أن يتراوح طول المهمة بين 3 و 120 حرفاً.".encode("utf-8") in response.data
 
     with app.app_context():
         count = len(db.session.scalars(db.select(Task)).all())
@@ -49,7 +49,7 @@ def test_add_task_whitespace_only(client, app):
         follow_redirects=True,
     )
     assert response.status_code == 200
-    assert b"Task title cannot be empty." in response.data
+    assert "يجب أن يتراوح طول المهمة بين 3 و 120 حرفاً.".encode("utf-8") in response.data
 
     with app.app_context():
         count = len(db.session.scalars(db.select(Task)).all())
@@ -57,23 +57,53 @@ def test_add_task_whitespace_only(client, app):
 
 
 def test_add_task_title_too_long(client, app):
-    """POST /tasks/add with title exceeding 200 characters should be rejected."""
-    long_title = "A" * 201
+    """POST /tasks/add with title exceeding 120 characters should be rejected."""
+    long_title = "A" * 121
     response = client.post(
         "/tasks/add",
         data={"title": long_title},
         follow_redirects=True,
     )
     assert response.status_code == 200
-    assert b"200 characters or fewer" in response.data
+    assert "يجب أن يتراوح طول المهمة بين 3 و 120 حرفاً.".encode("utf-8") in response.data
 
     with app.app_context():
         assert len(db.session.scalars(db.select(Task)).all()) == 0
 
 
-def test_add_task_utf8_arabic(client, app):
-    """POST /tasks/add should properly support UTF-8 Arabic characters."""
-    arabic_title = "إكمال مشروع البرمجة المتقدمة"
+def test_reject_too_short(client, app):
+    """POST /tasks/add with 1-2 characters should be rejected."""
+    for short_title in ["a", "hi", "  ok "]:
+        response = client.post(
+            "/tasks/add",
+            data={"title": short_title},
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert "يجب أن يتراوح طول المهمة بين 3 و 120 حرفاً.".encode("utf-8") in response.data
+
+    with app.app_context():
+        assert len(db.session.scalars(db.select(Task)).all()) == 0
+
+
+def test_reject_symbols_only(client, app):
+    """POST /tasks/add with only numbers/symbols and no letters should be rejected."""
+    for invalid_title in ["###", "--!?", "12345", "$$$ @@@"]:
+        response = client.post(
+            "/tasks/add",
+            data={"title": invalid_title},
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert "يرجى إدخال نص مهمة صالح يحتوي على أحرف واضحة.".encode("utf-8") in response.data
+
+    with app.app_context():
+        assert len(db.session.scalars(db.select(Task)).all()) == 0
+
+
+def test_add_arabic_task(client, app):
+    """Confirm valid Arabic text passes validation and is stored in database."""
+    arabic_title = "مهمة جديدة باللغة العربية"
     response = client.post(
         "/tasks/add",
         data={"title": arabic_title},
@@ -86,6 +116,68 @@ def test_add_task_utf8_arabic(client, app):
         task = db.session.scalar(db.select(Task).filter_by(title=arabic_title))
         assert task is not None
         assert task.title == arabic_title
+
+
+def test_prevent_duplicate_active_task(client, app):
+    """Confirm adding the same active task twice is blocked case-insensitively."""
+    task_title = "Review Architecture Docs"
+    # First submission succeeds
+    res1 = client.post(
+        "/tasks/add",
+        data={"title": task_title},
+        follow_redirects=True,
+    )
+    assert res1.status_code == 200
+    assert b"created successfully" in res1.data
+
+    # Second submission (differing case and extra spaces) is blocked
+    res2 = client.post(
+        "/tasks/add",
+        data={"title": "  review architecture docs  "},
+        follow_redirects=True,
+    )
+    assert res2.status_code == 200
+    assert "هذه المهمة مسجلة مسبقاً وقيد الانتظار.".encode("utf-8") in res2.data
+
+    with app.app_context():
+        tasks = db.session.scalars(
+            db.select(Task).filter(db.func.lower(Task.title) == task_title.lower())
+        ).all()
+        assert len(tasks) == 1
+
+
+def test_allow_duplicate_completed_task(client, app):
+    """Confirm adding a task whose prior instance is completed (done=True) succeeds."""
+    task_title = "Submit Final Project"
+    res1 = client.post(
+        "/tasks/add",
+        data={"title": task_title},
+        follow_redirects=True,
+    )
+    assert res1.status_code == 200
+
+    # Mark first instance as completed
+    with app.app_context():
+        task = db.session.scalar(db.select(Task).filter_by(title=task_title))
+        task.done = True
+        db.session.commit()
+
+    # Re-adding the same title should now be permitted
+    res2 = client.post(
+        "/tasks/add",
+        data={"title": task_title},
+        follow_redirects=True,
+    )
+    assert res2.status_code == 200
+    assert b"created successfully" in res2.data
+
+    with app.app_context():
+        tasks = db.session.scalars(
+            db.select(Task).filter_by(title=task_title)
+        ).all()
+        assert len(tasks) == 2
+        assert any(t.done for t in tasks)
+        assert any(not t.done for t in tasks)
 
 
 def test_toggle_task_status(client, app, sample_task):

@@ -25,15 +25,26 @@ def index():
 
 @main_bp.route("/tasks/add", methods=["POST"])
 def add_task():
-    """Validate user input and create a new task."""
+    """Validate user input, prevent duplicates, and create a new task."""
     title = request.form.get("title", "").strip()
 
-    if not title:
-        flash("Task title cannot be empty.", "warning")
+    # 1. Whitespace & Length Limits (3 <= len <= 120)
+    if not (3 <= len(title) <= 120):
+        flash("يجب أن يتراوح طول المهمة بين 3 و 120 حرفاً.", "warning")
         return redirect(url_for("main.index"))
 
-    if len(title) > 200:
-        flash("Task title must be 200 characters or fewer.", "danger")
+    # 2. Language-Agnostic Meaningful Text Check (Arabic & English Friendly)
+    if not any(char.isalpha() for char in title):
+        flash("يرجى إدخال نص مهمة صالح يحتوي على أحرف واضحة.", "warning")
+        return redirect(url_for("main.index"))
+
+    # 3. Duplicate Active Task Prevention (case-insensitive, trimmed, active only)
+    existing_active_task = Task.query.filter(
+        db.func.lower(Task.title) == title.lower(),
+        Task.done == False
+    ).first()
+    if existing_active_task:
+        flash("هذه المهمة مسجلة مسبقاً وقيد الانتظار.", "warning")
         return redirect(url_for("main.index"))
 
     task = Task(title=title)
